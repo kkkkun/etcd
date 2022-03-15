@@ -16,6 +16,7 @@ See [code changes](https://github.com/etcd-io/etcd/compare/v3.5.0...v3.6.0).
 ### Deprecations
 
 - Deprecated [V2 discovery](https://etcd.io/docs/v3.5/dev-internal/discovery_protocol/).
+- Deprecated [etcdctl snapshot restore/save]
 
 ### etcdctl v3
 
