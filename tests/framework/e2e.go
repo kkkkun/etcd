@@ -75,6 +75,10 @@ func (e e2eRunner) NewCluster(t testing.TB, cfg config.ClusterConfig) Cluster {
 	return &e2eCluster{*epc}
 }
 
+func NewClusterByProcess(epc e2e.EtcdProcessCluster) Cluster {
+	return &e2eCluster{epc}
+}
+
 type e2eCluster struct {
 	e2e.EtcdProcessCluster
 }
