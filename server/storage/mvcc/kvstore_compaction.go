@@ -58,6 +58,7 @@ func (s *store) scheduleCompaction(compactMainRev int64, keep map[revision]struc
 			s.lg.Info(
 				"finished scheduled compaction",
 				zap.Int64("compact-revision", compactMainRev),
+				zap.Int("count-compactions", keyCompactions),
 				zap.Duration("took", time.Since(totalStart)),
 			)
 			return true
