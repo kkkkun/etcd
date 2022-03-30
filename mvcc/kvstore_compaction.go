@@ -16,16 +16,68 @@ package mvcc
 
 import (
 	"encoding/binary"
+	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
 )
+
+func goid() (int, error) {
+	var buf [64]byte
+	n := runtime.Stack(buf[:], false)
+	idField := strings.Fields(strings.TrimPrefix(string(buf[:n]), "goroutine "))[0]
+	id, err := strconv.Atoi(idField)
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
 
 func (s *store) scheduleCompaction(compactMainRev int64, keep map[revision]struct{}) bool {
 	totalStart := time.Now()
 	defer func() { dbCompactionTotalMs.Observe(float64(time.Since(totalStart) / time.Millisecond)) }()
 	keyCompactions := 0
 	defer func() { dbCompactionKeysCounter.Add(float64(keyCompactions)) }()
+
+	gid, _ := goid()
+	if s.lg != nil {
+		s.lg.Info(
+			"compaction debug",
+			zap.String("step", "start scheduler"),
+			zap.Int64("compact-revision", compactMainRev),
+			zap.Int("gip", gid),
+			zap.Time("%v", totalStart),
+		)
+	} else {
+		plog.Infof(
+			"compaction debug",
+			zap.String("step", "start scheduler"),
+			zap.Int64("compact-revision", compactMainRev),
+			zap.Int("gip", gid),
+			zap.Time("%v", totalStart),
+		)
+	}
+	defer func() {
+		if s.lg != nil {
+			s.lg.Info(
+				"compaction debug",
+				zap.String("step", "finish scheduler"),
+				zap.Int64("compact-revision", compactMainRev),
+				zap.Int("compact-count", keyCompactions),
+				zap.Duration("took", time.Since(totalStart)),
+			)
+		} else {
+			plog.Infof(
+				"compaction debug",
+				zap.String("step", "finish scheduler"),
+				zap.Int64("compact-revision", compactMainRev),
+				zap.Int("compact-count", keyCompactions),
+				zap.Duration("took", time.Since(totalStart)),
+			)
+		}
+	}()
 
 	end := make([]byte, 8)
 	binary.BigEndian.PutUint64(end, uint64(compactMainRev+1))
@@ -45,6 +97,23 @@ func (s *store) scheduleCompaction(compactMainRev int64, keep map[revision]struc
 				tx.UnsafeDelete(keyBucketName, key)
 				keyCompactions++
 			}
+		}
+		if s.lg != nil {
+			s.lg.Info(
+				"compaction debug",
+				zap.String("step", "doing scheduler"),
+				zap.String("last", string(last)),
+				zap.String("end", string(end)),
+				zap.Int("length", len(keys)),
+			)
+		} else {
+			plog.Infof(
+				"compaction debug",
+				zap.String("step", "doing scheduler"),
+				zap.String("last", string(last)),
+				zap.String("end", string(end)),
+				zap.Int("length", len(keys)),
+			)
 		}
 
 		if len(keys) < s.cfg.CompactionBatchLimit {
