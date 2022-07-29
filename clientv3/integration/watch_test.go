@@ -27,7 +27,7 @@ import (
 	"go.etcd.io/etcd/etcdserver/api/v3rpc"
 	"go.etcd.io/etcd/etcdserver/api/v3rpc/rpctypes"
 	"go.etcd.io/etcd/integration"
-	mvccpb "go.etcd.io/etcd/mvcc/mvccpb"
+	"go.etcd.io/etcd/mvcc/mvccpb"
 	"go.etcd.io/etcd/pkg/testutil"
 
 	"google.golang.org/grpc/metadata"
@@ -337,6 +337,9 @@ func putAndWatch(t *testing.T, wctx *watchctx, key, val string) {
 	case v, ok := <-wctx.ch:
 		if !ok {
 			t.Fatalf("unexpected watch close")
+		}
+		if len(v.Events) == 0 {
+			t.Fatalf("unexcepted watch event on watch")
 		}
 		if string(v.Events[0].Kv.Value) != val {
 			t.Fatalf("bad value got %v, wanted %v", v.Events[0].Kv.Value, val)
