@@ -34,6 +34,8 @@ var (
 	getRev         int64
 	getKeysOnly    bool
 	getCountOnly   bool
+	lastRev        bool
+	firstRev       bool
 	printValueOnly bool
 )
 
@@ -46,7 +48,7 @@ func NewGetCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&getConsistency, "consistency", "l", "Linearizable(l) or Serializable(s)")
-	cmd.Flags().StringVar(&getSortOrder, "order", "", "Order of results; ASCEND or DESCEND (ASCEND by default)")
+	cmd.Flags().StringVar(&getSortOrder, "order", "", "Order of results; ASCEND or DESCEND (None by default)")
 	cmd.Flags().StringVar(&getSortTarget, "sort-by", "", "Sort target; CREATE, KEY, MODIFY, VALUE, or VERSION")
 	cmd.Flags().Int64Var(&getLimit, "limit", 0, "Maximum number of results")
 	cmd.Flags().BoolVar(&getPrefix, "prefix", false, "Get keys with matching prefix")
@@ -54,6 +56,9 @@ func NewGetCommand() *cobra.Command {
 	cmd.Flags().Int64Var(&getRev, "rev", 0, "Specify the kv revision")
 	cmd.Flags().BoolVar(&getKeysOnly, "keys-only", false, "Get only the keys")
 	cmd.Flags().BoolVar(&getCountOnly, "count-only", false, "Get only the count")
+
+	cmd.Flags().BoolVar(&lastRev, "last-rev", false, "Get only result with last rev")
+	cmd.Flags().BoolVar(&firstRev, "first-rev", false, "Get only result with first rev")
 	cmd.Flags().BoolVar(&printValueOnly, "print-value-only", false, `Only write values when using the "simple" output format`)
 
 	cmd.RegisterFlagCompletionFunc("consistency", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
@@ -108,6 +113,14 @@ func getGetOp(args []string) (string, []clientv3.OpOption) {
 		cobrautl.ExitWithError(cobrautl.ExitBadArgs, fmt.Errorf("`--keys-only` and `--count-only` cannot be set at the same time, choose one"))
 	}
 
+	if firstRev && lastRev {
+		cobrautl.ExitWithError(cobrautl.ExitBadArgs, fmt.Errorf("`--first-rev` and `--last-rev` cannot be set at the same time, choose one"))
+	}
+
+	if (firstRev && getLimit != 0) || (lastRev && getLimit != 0) {
+		cobrautl.ExitWithError(cobrautl.ExitBadArgs, fmt.Errorf("`--first-rev` or `--last-rev` and `--limit` cannot be set at the same time, choose one"))
+	}
+
 	var opts []clientv3.OpOption
 	if IsSerializable(getConsistency) {
 		opts = append(opts, clientv3.WithSerializable())
@@ -121,9 +134,20 @@ func getGetOp(args []string) (string, []clientv3.OpOption) {
 		opts = append(opts, clientv3.WithRange(args[1]))
 	}
 
-	opts = append(opts, clientv3.WithLimit(getLimit))
+	if getLimit > 0 {
+		opts = append(opts, clientv3.WithLimit(getLimit))
+	}
+
 	if getRev > 0 {
 		opts = append(opts, clientv3.WithRev(getRev))
+	}
+
+	if lastRev {
+		opts = append(opts, clientv3.WithLastRev()...)
+	}
+
+	if firstRev {
+		opts = append(opts, clientv3.WithFirstRev()...)
 	}
 
 	sortByOrder := clientv3.SortNone
