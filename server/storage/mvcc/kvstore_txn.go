@@ -17,6 +17,7 @@ package mvcc
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"go.uber.org/zap"
 
@@ -80,8 +81,18 @@ func (tr *storeTxnRead) rangeKeys(ctx context.Context, key, end []byte, curRev i
 		tr.trace.Step("count revisions from in-memory index tree")
 		return &RangeResult{KVs: nil, Count: total, Rev: curRev}, nil
 	}
-	revpairs, total := tr.s.kvindex.Revisions(key, end, rev, int(ro.Limit))
+	revpairs, total := tr.s.kvindex.Revisions(key, end, rev, rangeLimit(ro))
 	tr.trace.Step("range keys from in-memory index tree")
+	if ro.SortByModRevision {
+		sorter := revisions(revpairs)
+		switch ro.SortOrder {
+		case SortDescend:
+			sort.Sort(sort.Reverse(sorter))
+		case SortAscend:
+			sort.Sort(sorter)
+		}
+	}
+	revpairs = pruneRevisions(revpairs, rangeOpToPrunableFuncs(ro))
 	if len(revpairs) == 0 {
 		return &RangeResult{KVs: nil, Count: total, Rev: curRev}, nil
 	}
@@ -316,3 +327,47 @@ func (tw *storeTxnWrite) delete(key []byte) {
 }
 
 func (tw *storeTxnWrite) Changes() []mvccpb.KeyValue { return tw.changes }
+
+func pruneRevisions(revisions []revision, prunableFuncs []func(revision) bool) (ret []revision) {
+	if len(prunableFuncs) == 0 {
+		return revisions
+	}
+
+	j := 0
+	for i := range revisions {
+		revisions[j] = revisions[i]
+		prunable := false
+		for _, f := range prunableFuncs {
+			if f(revisions[i]) {
+				prunable = true
+				break
+			}
+		}
+		if !prunable {
+			j++
+		}
+	}
+	return revisions[:j]
+}
+
+func rangeOpToPrunableFuncs(op RangeOptions) (funcs []func(revision) bool) {
+	if op.MinModRevision != 0 {
+		funcs = append(funcs, func(r revision) bool {
+			return r.main < op.MinModRevision
+		})
+	}
+	if op.MaxModRevision != 0 {
+		funcs = append(funcs, func(r revision) bool {
+			return r.main > op.MaxModRevision
+		})
+	}
+	return
+}
+
+func rangeLimit(op RangeOptions) int {
+	// if range by modRevision sort, should fetch all revisions from underlying transaction
+	if op.SortByModRevision {
+		return 0
+	}
+	return int(op.Limit)
+}
