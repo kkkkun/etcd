@@ -799,6 +799,7 @@ func (e *Etcd) serveClients() {
 	// start client servers in each goroutine
 	for _, sctx := range e.sctxs {
 		s := sctx
+		s.goAwayChance = e.cfg.GoAwayChance
 		e.startHandler(func() error {
 			return s.serve(e.Server, &e.cfg.ClientTLSInfo, mux, e.errHandler, e.grpcGatewayDial(splitHTTP), splitHTTP, gopts...)
 		})

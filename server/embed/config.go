@@ -297,6 +297,11 @@ type Config struct {
 	// before closing a non-responsive connection. 0 to disable.
 	GRPCKeepAliveTimeout time.Duration `json:"grpc-keepalive-timeout"`
 
+	// GoAwayChance is the probability of sending a GOAWAY to HTTP/2 clients
+	// on each request. A value of 0.001 means 1/1000 chance. This helps
+	// clients behind a load balancer rebalance to another server. 0 disables.
+	GoAwayChance float64 `json:"goaway-chance"`
+
 	// GRPCAdditionalServerOptions is the additional server option hook
 	// for changing the default internal gRPC configuration. Note these
 	// additional configurations take precedence over the existing individual
@@ -638,6 +643,7 @@ func (cfg *Config) AddFlags(fs *flag.FlagSet) {
 	fs.DurationVar(&cfg.GRPCKeepAliveMinTime, "grpc-keepalive-min-time", cfg.GRPCKeepAliveMinTime, "Minimum interval duration that a client should wait before pinging server.")
 	fs.DurationVar(&cfg.GRPCKeepAliveInterval, "grpc-keepalive-interval", cfg.GRPCKeepAliveInterval, "Frequency duration of server-to-client ping to check if a connection is alive (0 to disable).")
 	fs.DurationVar(&cfg.GRPCKeepAliveTimeout, "grpc-keepalive-timeout", cfg.GRPCKeepAliveTimeout, "Additional duration of wait before closing a non-responsive connection (0 to disable).")
+	fs.Float64Var(&cfg.GoAwayChance, "goaway-chance", cfg.GoAwayChance, "Probability of sending a GOAWAY to HTTP/2 clients per request (e.g. 0.001 means 1/1000 chance). 0 disables.")
 	fs.BoolVar(&cfg.SocketOpts.ReusePort, "socket-reuse-port", cfg.SocketOpts.ReusePort, "Enable to set socket option SO_REUSEPORT on listeners allowing rebinding of a port already in use.")
 	fs.BoolVar(&cfg.SocketOpts.ReuseAddress, "socket-reuse-address", cfg.SocketOpts.ReuseAddress, "Enable to set socket option SO_REUSEADDR on listeners allowing binding to an address in `TIME_WAIT` state.")
 
@@ -1018,6 +1024,10 @@ func (cfg *Config) Validate() error {
 		return errors.New("undefined auto-compaction-mode")
 	default:
 		return fmt.Errorf("unknown auto-compaction-mode %q", cfg.AutoCompactionMode)
+	}
+
+	if cfg.GoAwayChance < 0 || cfg.GoAwayChance > 1 {
+		return fmt.Errorf("--goaway-chance must be in range [0, 1] (set to %v)", cfg.GoAwayChance)
 	}
 
 	// Validate distributed tracing configuration but only if enabled.

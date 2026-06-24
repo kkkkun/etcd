@@ -61,6 +61,10 @@ type serveCtx struct {
 	insecure bool
 	httpOnly bool
 
+	// goAwayChance is the probability of sending a GOAWAY to HTTP/2 clients
+	// per request. 0 means disabled.
+	goAwayChance float64
+
 	// ctx is used to control the grpc gateway. Terminate the grpc gateway
 	// by calling `cancel` when shutting down the etcd.
 	ctx    context.Context
@@ -78,6 +82,13 @@ type serveCtx struct {
 
 	// wg is used to track the lifecycle of all sub goroutines created by `serve`.
 	wg sync.WaitGroup
+}
+
+func (sctx *serveCtx) wrapWithGoAway(h http.Handler) http.Handler {
+	if sctx.goAwayChance > 0 {
+		return withProbabilisticGoaway(h, sctx.goAwayChance)
+	}
+	return h
 }
 
 func (sctx *serveCtx) startHandler(errHandler func(error), handler func() error) {
@@ -173,7 +184,7 @@ func (sctx *serveCtx) serve(
 		if httpEnabled {
 			httpmux := sctx.createMux(gwmux, handler)
 			srv = &http.Server{
-				Handler:  createAccessController(sctx.lg, s, httpmux),
+				Handler:  sctx.wrapWithGoAway(createAccessController(sctx.lg, s, httpmux)),
 				ErrorLog: logger, // do not log user error
 			}
 			if err = configureHTTPServer(srv, s.Cfg); err != nil {
@@ -255,7 +266,7 @@ func (sctx *serveCtx) serve(
 			httpmux := sctx.createMux(gwmux, handler)
 
 			srv = &http.Server{
-				Handler:   createAccessController(sctx.lg, s, httpmux),
+				Handler:   sctx.wrapWithGoAway(createAccessController(sctx.lg, s, httpmux)),
 				TLSConfig: tlscfg,
 				ErrorLog:  logger, // do not log user error
 			}
